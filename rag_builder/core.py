@@ -13,7 +13,16 @@ class DocumentChunker:
 
     @staticmethod
     def chunk_by_size(text: str, chunk_size: int = 500, overlap: int = 100) -> List[str]:
-        """Split text into overlapping chunks."""
+        """Split text into overlapping chunks.
+
+        Raises ValueError if chunk_size is not positive or overlap is not
+        in the range 0 <= overlap < chunk_size.
+        """
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be positive")
+        if not 0 <= overlap < chunk_size:
+            raise ValueError("overlap must be >= 0 and smaller than chunk_size")
+
         chunks = []
         step = chunk_size - overlap
 
