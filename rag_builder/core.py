@@ -5,14 +5,13 @@ Document chunking, embedding search, context injection.
 """
 
 import re
-from typing import List, Dict, Tuple
 
 
 class DocumentChunker:
     """Split documents into chunks."""
 
     @staticmethod
-    def chunk_by_size(text: str, chunk_size: int = 500, overlap: int = 100) -> List[str]:
+    def chunk_by_size(text: str, chunk_size: int = 500, overlap: int = 100) -> list[str]:
         """Split text into overlapping chunks.
 
         Raises ValueError if chunk_size is not positive or overlap is not
@@ -34,7 +33,7 @@ class DocumentChunker:
         return chunks
 
     @staticmethod
-    def chunk_by_sentences(text: str, sentences_per_chunk: int = 5) -> List[str]:
+    def chunk_by_sentences(text: str, sentences_per_chunk: int = 5) -> list[str]:
         """Split text by sentences."""
         sentences = re.split(r"[.!?]+", text)
         chunks = []
@@ -47,7 +46,7 @@ class DocumentChunker:
         return chunks
 
     @staticmethod
-    def chunk_by_paragraphs(text: str) -> List[str]:
+    def chunk_by_paragraphs(text: str) -> list[str]:
         """Split text by paragraphs."""
         paragraphs = text.split("\n\n")
         return [p.strip() for p in paragraphs if p.strip()]
@@ -58,18 +57,20 @@ class RAGBuilder:
 
     def __init__(self):
         """Initialize RAG builder."""
-        self.documents: List[Dict] = []
-        self.chunks: List[Dict] = []
+        self.documents: list[dict] = []
+        self.chunks: list[dict] = []
 
-    def add_document(self, doc_id: str, text: str, metadata: Dict = None) -> None:
+    def add_document(self, doc_id: str, text: str, metadata: dict | None = None) -> None:
         """Add document."""
-        self.documents.append({
-            "id": doc_id,
-            "text": text,
-            "metadata": metadata or {},
-        })
+        self.documents.append(
+            {
+                "id": doc_id,
+                "text": text,
+                "metadata": metadata or {},
+            }
+        )
 
-    def chunk_documents(self, chunk_method: str = "size", **kwargs) -> List[Dict]:
+    def chunk_documents(self, chunk_method: str = "size", **kwargs) -> list[dict]:
         """Chunk all documents."""
         self.chunks = []
 
@@ -91,12 +92,14 @@ class RAGBuilder:
                 chunks_list = [doc["text"]]
 
             for i, chunk in enumerate(chunks_list):
-                self.chunks.append({
-                    "doc_id": doc["id"],
-                    "chunk_id": f"{doc['id']}_chunk_{i}",
-                    "text": chunk,
-                    "metadata": doc["metadata"],
-                })
+                self.chunks.append(
+                    {
+                        "doc_id": doc["id"],
+                        "chunk_id": f"{doc['id']}_chunk_{i}",
+                        "text": chunk,
+                        "metadata": doc["metadata"],
+                    }
+                )
 
         return self.chunks
 
@@ -134,7 +137,7 @@ class RAGBuilder:
 
         return "\n".join(prompt_parts)
 
-    def get_stats(self) -> Dict:
+    def get_stats(self) -> dict:
         """Get RAG statistics."""
         total_tokens = sum(len(d["text"].split()) for d in self.documents)
         chunk_tokens = sum(len(c["text"].split()) for c in self.chunks)
@@ -153,7 +156,7 @@ def create_rag() -> RAGBuilder:
     return RAGBuilder()
 
 
-def chunk_text(text: str, method: str = "size") -> List[str]:
+def chunk_text(text: str, method: str = "size") -> list[str]:
     """Quick chunking."""
     if method == "sentences":
         return DocumentChunker.chunk_by_sentences(text)
@@ -163,22 +166,43 @@ def chunk_text(text: str, method: str = "size") -> List[str]:
         return DocumentChunker.chunk_by_size(text)
 
 
-def process(data: str, **kwargs) -> str:
-    """Process function."""
-    return "RAG builder ready"
-
-
-def main():
-    """CLI entry point."""
+def main(argv: list[str] | None = None) -> None:
+    """CLI entry point: chunk a file (or stdin) and optionally rank chunks for a query."""
     import argparse
+    import json
+    import sys
 
-    parser = argparse.ArgumentParser(description="Build RAG systems with document chunking")
-    parser.add_argument("method", nargs="?", default="size", choices=["size", "sentences", "paragraphs"])
-    parser.add_argument("--chunk-size", type=int, default=500)
+    parser = argparse.ArgumentParser(
+        prog="rag-builder",
+        description="Chunk a document and build a retrieval-augmented prompt.",
+    )
+    parser.add_argument("file", nargs="?", help="Text file to chunk (reads stdin if omitted)")
+    parser.add_argument(
+        "-m", "--method", default="size", choices=["size", "sentences", "paragraphs"]
+    )
+    parser.add_argument("--chunk-size", type=int, default=500, help="Characters per chunk")
+    parser.add_argument("--overlap", type=int, default=100, help="Characters shared by chunks")
+    parser.add_argument("-q", "--query", help="Print a RAG prompt for this query instead")
+    parser.add_argument("-k", "--top-k", type=int, default=3, help="Chunks to include")
+    args = parser.parse_args(argv)
 
-    args = parser.parse_args()
+    if args.file:
+        with open(args.file, encoding="utf-8") as fh:
+            text = fh.read()
+    else:
+        text = sys.stdin.read()
 
-    print(f"RAG builder ready (method: {args.method})")
+    rag = RAGBuilder()
+    rag.add_document(args.file or "stdin", text)
+    try:
+        rag.chunk_documents(args.method, chunk_size=args.chunk_size, overlap=args.overlap)
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    if args.query:
+        print(rag.generate_rag_prompt(args.query, top_k=args.top_k))
+    else:
+        print(json.dumps({"stats": rag.get_stats(), "chunks": rag.chunks}, indent=2))
 
 
 if __name__ == "__main__":
